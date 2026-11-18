@@ -18,9 +18,9 @@ CPsyCounR.json
 TheraMind_Patient_Guidance.json
 
 # 数据集与流水线生成的数据文件，不入库
-new_data_translate.json
-raw_data_translate.json
-client_records_translate.json
+new_data_translate*.json
+raw_data_translate*.json
+client_records_translate*.json
 
 # 本地模型配置，含 API Key，不入库
 api_config.json

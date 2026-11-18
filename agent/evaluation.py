@@ -2,7 +2,7 @@ from typing import Dict, Any, List, Optional
 import json
 import os
 from openai import OpenAI
-from memory import StrictMemoryManager
+from memory import StrictMemoryManager, get_response_style
 from datetime import datetime
 import re
 
@@ -64,7 +64,7 @@ class TherapistEvaluator:
         full_record = self.memory_manager.get_full_record(patient_id)
         current_session_num = len(full_record.get("sessions", {}))
     
-        decision_file = f"eval_data/decision basis_{patient_id}.json"
+        decision_file = os.path.join(self.memory_manager.eval_dir, f"decision basis_{patient_id}.json")
         if not os.path.exists(decision_file):
             return "No strategy memory available"
     
@@ -346,6 +346,7 @@ Please directly output the professional terminology of the therapy name without 
         all_dialogs = []
         for session in all_sessions_memory.values():
             all_dialogs.extend(session.get("dialogs", []))
+        response_style = get_response_style(self.memory_manager.get_config())
     
         prompt = f"""
 ##Role:
@@ -356,11 +357,11 @@ Please determine if it is necessary to refer to the historical conversations to 
   - patient's current words: {patient_input}
 Only when you can find places in the historical conversations that are clearly related to the content of the patient's current words, and the places are not too far away from the current conversation, is it necessary to refer to history.
   * If reference is needed:
-    Summarize relevant historical content in no more than 50 words. Just directly return a concise and accurate summary.
+    Summarize relevant historical content in no more than 50 {response_style['length_unit']}. Just directly return a concise and accurate summary.
   * If no reference is needed:
     Directly return the sentence 'No need to consider historical conversation memory'.
 ##Constraints:
-Directly output your answer in English. Do not include any other analysis or explanation.
+Directly output your answer in {response_style['language']}. Do not include any other analysis or explanation.
 """
     
         response = self._call_openai_api(prompt, max_tokens=110, temperature=0.3)
@@ -373,7 +374,7 @@ Directly output your answer in English. Do not include any other analysis or exp
 You are a professional and empathetic psychological counselor. 
 ##Requirements:
 Your task is to strictly judge whether the current session should be ended based on the patient's current words: {patient_input}.
-Only when the patient expresses a clear intention to end (such as saying "goodbye", "that's all for today", "we'll talk next time", etc.), return True. Otherwise return False.
+Only when the patient expresses a clear intention to end (such as saying "goodbye", "that's all for today", "we'll talk next time", "再见", "今天就到这里", "我们下次再聊", etc.), return True. Otherwise return False.
 ##Constraints:
 Strictly output a Boolean value True or False.   
 """

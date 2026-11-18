@@ -2,7 +2,7 @@ import json
 import os
 from openai import OpenAI
 from typing import List, Dict, Any
-from memory import StrictMemoryManager
+from memory import StrictMemoryManager, get_response_style, get_language_tag, resolve_data_file
 
 config = StrictMemoryManager().get_config()
 client = OpenAI(
@@ -12,8 +12,9 @@ client = OpenAI(
 
 class ClientRecordsGenerator:
     def __init__(self):
-        self.raw_data_path = "raw_data_translate.json"
-        self.output_path = "client_records_translate.json"  
+        self.language_tag = get_language_tag(config)
+        self.raw_data_path = resolve_data_file("raw_data_translate", self.language_tag)
+        self.output_path = f"client_records_translate_{self.language_tag}.json"  
     
     def load_raw_data(self) -> List[Dict[str, Any]]:
         with open(self.raw_data_path, 'r', encoding='utf-8') as f:
@@ -23,6 +24,7 @@ class ClientRecordsGenerator:
             return raw_data
 
     def generate_single_record(self, patient_id: str, case_data: Dict[str, Any]) -> Dict[str, Any]:
+        response_style = get_response_style(config)
         prompt = f"""
 ##Task:
 Generate standard patient medical records based on the following raw case information.
@@ -32,7 +34,7 @@ Generate standard patient medical records based on the following raw case inform
   - case summary: {case_data.get('case summary')}
 ##Requirement:
 1、Return a JSON object containing the following keys(the value for each key should be no more than 100 words):
-   - "patient pseudonym" (a common English name)
+   - "patient pseudonym" (a common {response_style['language']} name)
    - "patient age" (make a reasonable guess based on the case information)
    - "mental health history" 
    - "physical health history" 
@@ -41,7 +43,7 @@ Generate standard patient medical records based on the following raw case inform
 3、Maintain a professional medical record style.
 4、Extract all important case information. The medical record you generate should be detailed and comprehensive.
 ##Constraint:
-You must use English to answer.
+You must use {response_style['language']} to answer.
 Output the JSON object strictly without any explanatory text.
 """
 

@@ -72,6 +72,7 @@ Then fill in `base_url`, `api_key` and `model`:
 | `base_url` | OpenAI-compatible endpoint **including `/v1`** (e.g. `http://host:port/vllm/v1`). A missing `/v1` returns `404`. |
 | `api_key` | Raw key only — no `Bearer ` prefix, the SDK adds it. |
 | `model` | Model name exactly as the gateway exposes it. |
+| `response_language` | `zh` for Chinese dialogue, `en` for English (default `en`). Also selects the `_{lang}` data-file suffix and the `save_data/<lang>/`, `eval_data/<lang>/`, `label_data/<lang>/` output directories. Internal terms (strategy / therapy / emotion labels) stay English. |
 | `extra_body` | Carries `enable_thinking=false`. Required for Qwen3-style gateways that spend every token on reasoning and return an empty `content`; delete the key for models that do not support it. |
 
 ### 3. Data preparation
@@ -80,7 +81,7 @@ Two files must be downloaded by hand; everything else is generated.
 
 | File | How to obtain | Where to put it |
 |---|---|---|
-| `new_data_translate.json` | HuggingFace [`GMLHUHE/TheraMind_Patient_Guidance`](https://huggingface.co/datasets/GMLHUHE/TheraMind_Patient_Guidance) → download `TheraMind_Patient_Guidance.json` and rename it to `new_data_translate.json` | repository root |
+| `new_data_translate.json` | HuggingFace [`GMLHUHE/TheraMind_Patient_Guidance`](https://huggingface.co/datasets/GMLHUHE/TheraMind_Patient_Guidance) → download `TheraMind_Patient_Guidance.json` and rename it to `new_data_translate_<lang>.json` (or the legacy `new_data_translate.json`) | repository root |
 | `CPsyCounR.json` | HuggingFace [`CAS-SIAT-XinHai/CPsyCounR`](https://huggingface.co/datasets/CAS-SIAT-XinHai/CPsyCounR) (gated, research-use license, application required) | repository root |
 
 Then generate the patient medical records:
@@ -88,20 +89,23 @@ Then generate the patient medical records:
 ```bash
 export PYTHONPATH="$PWD/agent"
 
-uv run python data_process/build_raw_data.py   # CPsyCounR.json          -> raw_data_translate.json
-uv run python data_process/case_produce.py     # raw_data_translate.json -> client_records_translate.json
-cp client_records_translate.json agent/client_records_translate.json
+uv run python data_process/build_raw_data.py   # CPsyCounR.json                 -> raw_data_translate_<lang>.json
+uv run python data_process/case_produce.py     # raw_data_translate_<lang>.json -> client_records_translate_<lang>.json
+# optional: copy the records into agent/ if you keep an older layout
+cp client_records_translate_<lang>.json agent/client_records_translate_<lang>.json
 ```
+
+`<lang>` is the value of `response_language` (`zh` / `en`), so Chinese mode writes `raw_data_translate_zh.json` and `client_records_translate_zh.json`. Readers prefer the tagged file and fall back to the legacy untagged name, which keeps the existing English data usable in `zh` mode. `initialization.py` also looks in the repository root, so the `cp ... agent/` step is optional.
 
 `build_raw_data.py` maps the 3134 Chinese CPsyCounR reports onto the 100 patient ids of the guidance file (10 categories × 10 patients).
 
 Optionally regenerate the session guidance instead of using the released one:
 
 ```bash
-uv run python data_process/data_produce.py     # raw_data_translate.json -> new_data_translate.json
+uv run python data_process/data_produce.py     # raw_data_translate_<lang>.json -> new_data_translate_<lang>.json
 ```
 
-> **Working-directory note:** `save_data/`, `eval_data/`, `label_data/` and `new_data_translate.json` are resolved relative to the current working directory, while `client_records_translate.json` is read from `agent/`. Always start from the repository root.
+> **Working-directory note:** `save_data/<lang>/`, `eval_data/<lang>/`, `label_data/<lang>/` and the data files are resolved relative to the current working directory, while `client_records_translate*.json` is looked up in `agent/` first and then in the repository root. Always start from the repository root.
 
 ### 4. Simulate a counseling trajectory
 
@@ -117,9 +121,13 @@ simulator.run(num_sessions=1, max_rounds_per_session=3)
 
 | Output | Content |
 |---|---|
-| `save_data/<patient_id>.json` | patient record, per-session therapy and full dialogue |
-| `eval_data/decision basis_<patient_id>.json` | per-turn memory usage, emotion, strategy and therapy reasoning |
-| `label_data/label_<patient_id>.json` | patient attitude label for every turn |
+| `save_data/<lang>/<patient_id>.json` | patient record, per-session therapy and full dialogue |
+| `eval_data/<lang>/decision basis_<patient_id>.json` | per-turn memory usage, emotion, strategy and therapy reasoning |
+| `label_data/<lang>/label_<patient_id>.json` | patient attitude label for every turn |
+
+`<lang>` follows `response_language`, so Chinese and English runs never overwrite each other.
+
+> The full per-turn call chain and context sources are documented in [docs/dialogue-flow.zh-CN.md](docs/dialogue-flow.zh-CN.md).
 
 ### 5. Use the agents directly
 
@@ -141,7 +149,7 @@ patient_agent = PatientAgent(medical_record, patient_id)
 | `401 Unauthorized` | invalid key, or a key that already carries a `Bearer ` prefix |
 | `content` is `None`, or the record comes back as `{}` | reasoning model with thinking enabled — set `extra_body.chat_template_kwargs.enable_thinking=false` |
 | `ModuleNotFoundError: No module named 'memory'` | a `data_process/` script was run without `PYTHONPATH=<repo>/agent` |
-| `FileNotFoundError: new_data_translate.json` | the script was started outside the repository root |
+| `FileNotFoundError: new_data_translate_{lang}.json` | the script was started outside the repository root |
 
 ## 📜 Citation
 ```bibtex

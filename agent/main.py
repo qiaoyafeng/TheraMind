@@ -2,7 +2,7 @@ import os
 from openai import OpenAI
 import json
 from typing import Dict, Any, Optional
-from memory import StrictMemoryManager
+from memory import StrictMemoryManager, get_response_style, resolve_data_file
 from initialization import TherapistInitializer
 from evaluation import TherapistEvaluator
 import time
@@ -23,10 +23,10 @@ class PatientAgent:
     def __init__(self, medical_record: Dict, patient_id: str):
         self.medical_record = medical_record
         self.patient_id = patient_id
+        self.memory_manager = StrictMemoryManager()
         self.session_guides = self._load_session_guides()
         self.current_session_num = 1
         self.dialogue_count = 0  
-        self.memory_manager = StrictMemoryManager()
         self.last_attitude = None  
 
     def _get_all_historical_dialogs(self) -> List[str]:
@@ -43,7 +43,8 @@ class PatientAgent:
         return sessions_data if sessions_data else {"session_1": {"dialogs": []}}
     
     def _load_session_guides(self) -> Dict[int, str]:
-        with open("new_data_translate.json", "r", encoding="utf-8") as f:
+        guide_path = resolve_data_file("new_data_translate", self.memory_manager.lang_tag)
+        with open(guide_path, "r", encoding="utf-8") as f:
             all_data = json.load(f)
             patient_data = all_data.get(self.patient_id, {})
             if not patient_data:
@@ -66,6 +67,7 @@ class PatientAgent:
 
     def generate_response(self, therapist_message):
         self.dialogue_count += 1
+        response_style = get_response_style(config)
         session_guide = self.session_guides.get(self.current_session_num, "")
         historical_dialogs = self._get_all_historical_dialogs()
         client_information = self.medical_record
@@ -91,7 +93,7 @@ You are a patient participating in psychological counseling. Please give a respo
 4.On the basis of responding to doctors, you should also pay attention to your own consultation needs. Try to make a balance between them.
 5.Your expression should be in line with the patient's speaking style, as colloquial and natural as possible. Limit your speech to 1 to 2 sentences each time, and be faithful to your personal information when speaking.
 ##Constraints:
-Generate your response in English. Your response should be no more than 60 words. 
+Generate your response in {response_style['language']}. Your response should be no more than 60 {response_style['length_unit']}. 
 Do not include any additional text, explanations, word count or formatting outside the JSON object. 
 Strictly return a JSON object, like this:
 {{
@@ -129,7 +131,7 @@ Strictly return a JSON object, like this:
         }  
             
     def _save_label_data(self, session_num: int, speak_num: int, attitude: str):
-        label_dir = "label_data"
+        label_dir = os.path.join("label_data", self.memory_manager.lang_tag)
         os.makedirs(label_dir, exist_ok=True)
         filename = f"label_{self.patient_id}.json"
         filepath = os.path.join(label_dir, filename)
@@ -212,14 +214,23 @@ class TherapistAgent:
         session_num = self.memory_manager.add_session(patient_id, self.current_therapy)
         self.current_session_id = f"{patient_id}_{session_num}"
 
+        response_language = get_response_style(self.memory_manager.get_config())["language"]
         if session_num == 1:
-            greeting = "Hello, I'm your psychological counselor. Nice to meet you. Today we can talk about your recent situation."
+            greeting = (
+                "你好，我是你的心理咨询师，很高兴认识你。今天我们可以聊聊你最近的情况。"
+                if response_language == "Chinese"
+                else "Hello, I'm your psychological counselor. Nice to meet you. Today we can talk about your recent situation."
+            )
         else:
             last_session = self.memory_manager.get_session(patient_id, session_num-1)
             last_therapy = "unspecified therapy"
             if last_session is not None:
                 last_therapy = last_session.get("therapy", "unspecified therapy")
-            greeting = f"Hello! Nice to see you again. How are you feeling today?"
+            greeting = (
+                "你好，很高兴再次见到你。今天感觉怎么样？"
+                if response_language == "Chinese"
+                else "Hello! Nice to see you again. How are you feeling today?"
+            )
         
         self.evaluator._save_therapy_reason(
             patient_id=patient_id,
@@ -350,6 +361,7 @@ class TherapistAgent:
                      emotion_data: Dict[str, Any],
                      current_therapy: str) -> str:
         config = self.memory_manager.get_config()
+        response_style = get_response_style(config)
                 
         session_memory = {}
         if self.current_session_id:
@@ -400,7 +412,7 @@ Your job is to respond to the patient compassionately and offer support in psych
   8.You must use diverse and different sentence patterns to reply each time to avoid a single reply mode. To avoid using the same sentence pattern, please refer to your previous replies from the conversation records for this session:{session_memory}.
   9.When the patient expresses a clear desire to end this conversation, please also provide a response to end the conversation in a declarative tone.
 ##Constraints:
-Directly generate your response in English. Your response should be no more than 60 words. Do not provide any word count, analysis or explanation. 
+Directly generate your response in {response_style['language']}. Your response should be no more than 60 {response_style['length_unit']}. Do not provide any word count, analysis or explanation. 
 """
 
         try:
@@ -420,6 +432,8 @@ Directly generate your response in English. Your response should be no more than
         
             return clean_response
         except Exception as e:
+            if response_style["language"] == "Chinese":
+                return "抱歉，我暂时无法处理你的请求，请再说一次。"
             return "Sorry, I'm temporarily unable to process your request, please try again."
         
 

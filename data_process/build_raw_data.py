@@ -1,4 +1,4 @@
-"""Build raw_data_translate.json for the TheraMind pipeline from CPsyCounR.json.
+"""Build raw_data_translate_{lang}.json for the TheraMind pipeline from CPsyCounR.json.
 
 CPsyCounR stores 3134 Chinese counseling reports with Chinese field names, while
 case_produce.py / data_produce.py expect a list of {patient_id: case} entries with
@@ -6,15 +6,36 @@ English field names. Patient ids are taken from new_data_translate.json so that 
 session guidance and the generated medical records line up.
 
 Usage (from the repository root):
-    $env:PYTHONPATH = "e:\\workspace\\TheraMind\\agent"
-    uv run python data_process\\build_raw_data.py
+    uv run python data_process/build_raw_data.py
+
+The output name follows response_language in api_config.json:
+    raw_data_translate_zh.json / raw_data_translate_en.json
 """
 import json
 from collections import defaultdict
+from pathlib import Path
 
+CONFIG = Path(__file__).parent.parent / "api_config.json"
+
+
+def language_tag() -> str:
+    """Read response_language from api_config.json, defaulting to en."""
+    try:
+        with open(CONFIG, encoding="utf-8") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        return "en"
+    code = str(config.get("api_config", {}).get("openai", {}).get("response_language", "en")).lower()
+    return code if code in {"zh", "en"} else "en"
+
+
+TAG = language_tag()
 SOURCE = "CPsyCounR.json"
-GUIDANCE = "new_data_translate.json"
-OUTPUT = "raw_data_translate.json"
+GUIDANCE = next(
+    (name for name in (f"new_data_translate_{TAG}.json", "new_data_translate.json") if Path(name).exists()),
+    f"new_data_translate_{TAG}.json",
+)
+OUTPUT = f"raw_data_translate_{TAG}.json"
 
 # Guidance category (from new_data_translate.json) -> English label + keywords used to
 # classify a CPsyCounR row. The first bucket whose keywords hit wins, so more specific

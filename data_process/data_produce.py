@@ -2,7 +2,7 @@ import json
 import os
 from openai import OpenAI
 from typing import List, Dict, Any
-from memory import StrictMemoryManager
+from memory import StrictMemoryManager, get_response_style, get_language_tag, resolve_data_file
 
 config = StrictMemoryManager().get_config()
 client = OpenAI(
@@ -12,8 +12,9 @@ client = OpenAI(
 
 class DataProducer:
     def __init__(self):      
-        self.raw_data_path = "raw_data_translate.json"
-        self.new_data_path = "new_data_translate.json"
+        self.language_tag = get_language_tag(config)
+        self.raw_data_path = resolve_data_file("raw_data_translate", self.language_tag)
+        self.new_data_path = f"new_data_translate_{self.language_tag}.json"
         self.client = client
         
     def load_raw_data(self) -> List[Dict[str, Dict[str, Any]]]:
@@ -26,6 +27,7 @@ class DataProducer:
     
     def generate_consultation_stages(self, case_data: Dict[str, Any]) -> Dict[str, str]:
 
+        response_style = get_response_style(config)
         prompt = f"""
 ##Task:
 Generate guidance content for four counseling sessions based on the following case information. 
@@ -38,10 +40,10 @@ Must generate from the patient's perspective(assume now you are the patient), so
 -consultation process:{case_data.get("consultation process")}
 ##Requirement:
 1.Allocate consultation content for each session based on the "consultation process". And make your allocation in line with the laws of common consulting development.
-2.Session guidance content should be detailed, concise and concentrated, no more than 40 words for each one. You should capture and reserve key information according to 【case information】.
+2.Session guidance content should be detailed, concise and concentrated, no more than 40 {response_style['length_unit']} for each one. You should capture and reserve key information according to 【case information】.
 3.You can appropriately exert your reasonable imagination to make a supplement. 
 ##Constraints:
-You must use English to answer.
+You must use {response_style['language']} to answer.
 Your final output should be a JSON object contains four keys: session_1, session_2, session_3, session_4. And for each key, its value is the corresponding session guidance content.
 Strictly output a JSON object. Do not provide any explanation.
 """

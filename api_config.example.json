@@ -4,6 +4,7 @@
       "base_url": "http://your-gateway/v1",
       "api_key": "",
       "model": "your-model-name",
+      "response_language": "en",
       "extra_body": {"chat_template_kwargs": {"enable_thinking": false}},
       "enabled": true
     }

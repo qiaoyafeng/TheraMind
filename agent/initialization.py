@@ -3,6 +3,8 @@ from pathlib import Path
 import json
 from datetime import datetime
 
+from memory import get_language_tag
+
 class TherapistInitializer:
     def __init__(self, memory_manager):
         self.memory_manager = memory_manager
@@ -14,12 +16,24 @@ class TherapistInitializer:
             return json.load(f)
             
     def _load_client_record(self, patient_id: str = None) -> Dict:
-        record_path = Path(__file__).parent / "client_records_translate.json"
+        record_path = self._resolve_record_path()
         with open(record_path, 'r', encoding='utf-8') as f:
             all_records = json.load(f)
             if patient_id:
                 return all_records.get(patient_id, {})
             return all_records
+
+    def _resolve_record_path(self) -> Path:
+        # Language-tagged file first, then the legacy untagged one; agent/ then repo root.
+        tag = get_language_tag(self.config)
+        agent_dir = Path(__file__).parent
+        root_dir = agent_dir.parent
+        for base in (agent_dir, root_dir):
+            for name in (f"client_records_translate_{tag}.json", "client_records_translate.json"):
+                candidate = base / name
+                if candidate.exists():
+                    return candidate
+        return root_dir / f"client_records_translate_{tag}.json"
 
     def _get_initial_record(self, patient_id: str = None) -> Dict:
         client_record = self._load_client_record(patient_id) if patient_id else self._load_client_record()

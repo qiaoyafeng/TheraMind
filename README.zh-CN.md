@@ -71,13 +71,14 @@ uv sync                                           # 创建 .venv 并安装 opena
 cp api_config.example.json api_config.json
 ```
 
-然后填写 `base_url`、`api_key` 与 `model`：
+然后填写 `base_url`、`api_key`、`model` 与 `response_language`：
 
 | 字段 | 说明 |
 |---|---|
 | `base_url` | 兼容 OpenAI 协议的接口地址，**必须包含 `/v1`**（例如 `http://host:port/vllm/v1`）。缺少 `/v1` 会返回 `404`。 |
 | `api_key` | 只填裸 Key —— 不要带 `Bearer ` 前缀，SDK 会自动添加。 |
 | `model` | 与网关对外暴露的名称完全一致。 |
+| `response_language` | `zh` 输出中文对话、`en` 输出英文（默认 `en`）。同时决定数据文件的 `_{lang}` 后缀，以及 `save_data/<lang>/`、`eval_data/<lang>/`、`label_data/<lang>/` 产物目录。策略名、治疗名、情绪标签等内部术语仍为英文。 |
 | `extra_body` | 承载 `enable_thinking=false`。对 Qwen3 这类把全部 token 花在推理上、导致 `content` 为空的网关是必需的；若所用模型不支持该参数，删除这一项即可。 |
 
 ### 3. 数据准备
@@ -86,7 +87,7 @@ cp api_config.example.json api_config.json
 
 | 文件 | 获取方式 | 放置位置 |
 |---|---|---|
-| `new_data_translate.json` | HuggingFace [`GMLHUHE/TheraMind_Patient_Guidance`](https://huggingface.co/datasets/GMLHUHE/TheraMind_Patient_Guidance) → 下载 `TheraMind_Patient_Guidance.json` 并重命名为 `new_data_translate.json` | 仓库根目录 |
+| `new_data_translate.json` | HuggingFace [`GMLHUHE/TheraMind_Patient_Guidance`](https://huggingface.co/datasets/GMLHUHE/TheraMind_Patient_Guidance) → 下载 `TheraMind_Patient_Guidance.json` 并重命名为 `new_data_translate_<lang>.json`（或沿用旧名 `new_data_translate.json`） | 仓库根目录 |
 | `CPsyCounR.json` | HuggingFace [`CAS-SIAT-XinHai/CPsyCounR`](https://huggingface.co/datasets/CAS-SIAT-XinHai/CPsyCounR)（gated 数据集，研究用途许可，需提交申请） | 仓库根目录 |
 
 随后生成患者病历：
@@ -94,20 +95,23 @@ cp api_config.example.json api_config.json
 ```bash
 export PYTHONPATH="$PWD/agent"
 
-uv run python data_process/build_raw_data.py   # CPsyCounR.json          -> raw_data_translate.json
-uv run python data_process/case_produce.py     # raw_data_translate.json -> client_records_translate.json
-cp client_records_translate.json agent/client_records_translate.json
+uv run python data_process/build_raw_data.py   # CPsyCounR.json                 -> raw_data_translate_<lang>.json
+uv run python data_process/case_produce.py     # raw_data_translate_<lang>.json -> client_records_translate_<lang>.json
+# 可选：若沿用旧目录结构，可把病历复制到 agent/
+cp client_records_translate_<lang>.json agent/client_records_translate_<lang>.json
 ```
+
+`<lang>` 取自 `response_language`（`zh` / `en`），中文模式会生成 `raw_data_translate_zh.json` 与 `client_records_translate_zh.json`。读取时优先使用带标识的文件、读不到再回退旧的无后缀文件名，因此现有英文数据在 `zh` 模式下仍可直接使用。`initialization.py` 也会在仓库根目录查找，所以 `cp ... agent/` 这一步可选。
 
 `build_raw_data.py` 会把 3134 份中文 CPsyCounR 报告映射到引导文件中的 100 个患者 key 上（10 个类别 × 每类 10 个患者）。
 
 如果你希望自行生成会谈引导、而不使用已发布的数据，可以额外运行：
 
 ```bash
-uv run python data_process/data_produce.py     # raw_data_translate.json -> new_data_translate.json
+uv run python data_process/data_produce.py     # raw_data_translate_<lang>.json -> new_data_translate_<lang>.json
 ```
 
-> **工作目录说明：** `save_data/`、`eval_data/`、`label_data/` 与 `new_data_translate.json` 按当前工作目录解析，而 `client_records_translate.json` 从 `agent/` 目录读取。请始终从仓库根目录启动。
+> **工作目录说明：** `save_data/<lang>/`、`eval_data/<lang>/`、`label_data/<lang>/` 与数据文件按当前工作目录解析，而 `client_records_translate*.json` 先在 `agent/` 查找、再到仓库根目录。请始终从仓库根目录启动。
 
 ### 4. 模拟一次咨询轨迹
 
@@ -115,7 +119,7 @@ uv run python data_process/data_produce.py     # raw_data_translate.json -> new_
 uv run python agent/main.py
 ```
 
-该命令会对 `client_records_translate.json` 中的每一位患者各跑 6 个会谈 × 8 轮对话。若只想快速冒烟验证，请修改 `agent/main.py` 末尾：
+该命令会对 `client_records_translate*.json` 中的每一位患者各跑 6 个会谈 × 8 轮对话。若只想快速冒烟验证，请修改 `agent/main.py` 末尾：
 
 ```python
 simulator.run(num_sessions=1, max_rounds_per_session=3)
@@ -125,9 +129,13 @@ simulator.run(num_sessions=1, max_rounds_per_session=3)
 
 | 输出 | 内容 |
 |---|---|
-| `save_data/<patient_id>.json` | 患者档案、每次会谈所用疗法与完整对话 |
-| `eval_data/decision basis_<patient_id>.json` | 每一轮的记忆调用、情绪、策略与疗法决策依据 |
-| `label_data/label_<patient_id>.json` | 每一轮的患者态度标签 |
+| `save_data/<lang>/<patient_id>.json` | 患者档案、每次会谈所用疗法与完整对话 |
+| `eval_data/<lang>/decision basis_<patient_id>.json` | 每一轮的记忆调用、情绪、策略与疗法决策依据 |
+| `label_data/<lang>/label_<patient_id>.json` | 每一轮的患者态度标签 |
+
+`<lang>` 与 `response_language` 对应，中英文运行互不覆盖。
+
+> 逐轮调用链与上下文来源见 [docs/dialogue-flow.zh-CN.md](docs/dialogue-flow.zh-CN.md)。
 
 ### 5. 直接调用各 Agent
 
@@ -149,7 +157,7 @@ patient_agent = PatientAgent(medical_record, patient_id)
 | `401 Unauthorized` | Key 无效，或 Key 值本身已带 `Bearer ` 前缀 |
 | `content` 为 `None`，或病历返回 `{}` | 推理模型开启了思考模式 —— 设置 `extra_body.chat_template_kwargs.enable_thinking=false` |
 | `ModuleNotFoundError: No module named 'memory'` | 运行 `data_process/` 下脚本时未设置 `PYTHONPATH=<repo>/agent` |
-| `FileNotFoundError: new_data_translate.json` | 未在仓库根目录下启动脚本 |
+| `FileNotFoundError: new_data_translate_{lang}.json` | 未在仓库根目录下启动脚本 |
 
 ## 📜 引用
 

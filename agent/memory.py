@@ -5,14 +5,40 @@ from datetime import datetime
 from typing import Dict, List, Optional
 import requests
 
+_RESPONSE_STYLES = {
+    "zh": {"language": "Chinese", "length_unit": "characters"},
+    "en": {"language": "English", "length_unit": "words"},
+}
+
+
+def get_response_style(config: Dict) -> Dict[str, str]:
+    """Return the dialogue output language and its length unit."""
+    code = str(config.get("api_config", {}).get("openai", {}).get("response_language", "en")).lower()
+    return _RESPONSE_STYLES.get(code, _RESPONSE_STYLES["en"])
+
+
+def get_language_tag(config: Dict) -> str:
+    """Return the language tag (zh / en) used to isolate run artifacts."""
+    code = str(config.get("api_config", {}).get("openai", {}).get("response_language", "en")).lower()
+    return code if code in _RESPONSE_STYLES else "en"
+
+
+def resolve_data_file(stem: str, tag: str) -> str:
+    """Prefer the language-tagged data file, fall back to the legacy untagged one."""
+    for candidate in (f"{stem}_{tag}.json", f"{stem}.json"):
+        if os.path.exists(candidate):
+            return candidate
+    return f"{stem}_{tag}.json"
+
 
 class StrictMemoryManager:
     def __init__(self):
-        self.data_dir = "save_data"
-        self.eval_dir = "eval_data"
+        self._config = self._load_config()
+        self.lang_tag = get_language_tag(self._config)
+        self.data_dir = os.path.join("save_data", self.lang_tag)
+        self.eval_dir = os.path.join("eval_data", self.lang_tag)
         os.makedirs(self.data_dir, exist_ok=True)
         os.makedirs(self.eval_dir, exist_ok=True)
-        self._config = self._load_config()
         self._evaluator = None  
 
     def get_evaluator(self):
