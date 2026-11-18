@@ -22,7 +22,7 @@ class StrictMemoryManager:
         return self._evaluator
    
     def _load_config(self) -> Dict:
-        config_path = Path(__file__).parent / "api_config.json"
+        config_path = Path(__file__).parent.parent / "api_config.json"
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
            
@@ -131,13 +131,18 @@ class StrictMemoryManager:
     def get_full_record(self, patient_id: str) -> Dict:
         filepath = os.path.join(self.data_dir, f"{patient_id}.json")
 
-        with open(filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if "sessions" not in data:
-                data["sessions"] = {}
-            if "patient_record" not in data:
-                data["patient_record"] = {}
-            return data
+        # 文件不存在时返回空记录，交由调用方触发患者档案初始化
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            return {"patient_record": {}, "sessions": {}}
+
+        if "sessions" not in data:
+            data["sessions"] = {}
+        if "patient_record" not in data:
+            data["patient_record"] = {}
+        return data
 
 
     def update_session_info(self, patient_id: str, session_num: int, info: Dict) -> bool:

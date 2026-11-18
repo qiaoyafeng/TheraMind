@@ -46,13 +46,14 @@ class TherapistEvaluator:
 
     def _call_openai_api(self, prompt: str, max_tokens: int = 200, temperature: float = 0.7) -> Any:
         completion = client.chat.completions.create(
-            model="Pro/deepseek-ai/DeepSeek-V3",
+            model=config["api_config"]["openai"]["model"],
             messages=[
                 {"role": "system", "content": "You are a professional psychological counselor."},
                 {"role": "user", "content": prompt}
             ],
             temperature=temperature,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
+            extra_body=config["api_config"]["openai"].get("extra_body") or None
         )
         return self._parse_openai_response(completion)
   
@@ -201,6 +202,9 @@ Return your answer strictly in JSON format, like this:
 """
     
         response = self._call_openai_api(prompt, max_tokens=50, temperature=0.3)
+        # _parse_openai_response already decodes a pure JSON reply into a dict
+        if isinstance(response, dict):
+            return response
         cleaned_response = re.sub(r'^\s*```(json)?|```\s*$', '', response, flags=re.IGNORECASE).strip()
         return json.loads(cleaned_response)
 
@@ -257,6 +261,9 @@ Return your answer strictly in JSON format, like this:
 """ 
 
         response = self._call_openai_api(prompt, max_tokens=100, temperature=0.5)
+        # _parse_openai_response already decodes a pure JSON reply into a dict
+        if isinstance(response, dict):
+            return response
         cleaned_response = re.sub(r'^\s*```(json)?|```\s*$', '', response, flags=re.IGNORECASE).strip()
         
         return json.loads(cleaned_response)
@@ -289,6 +296,9 @@ Return your answer strictly in JSON format, like this:
 """
 
         response = self._call_openai_api(prompt, max_tokens=150, temperature=0.3)
+        # _parse_openai_response already decodes a pure JSON reply into a dict
+        if isinstance(response, dict):
+            return response
         cleaned_response = re.sub(r'^\s*```(json)?|```\s*$', '', response, flags=re.IGNORECASE).strip()
         
         return json.loads(cleaned_response)

@@ -101,14 +101,15 @@ Strictly return a JSON object, like this:
         import time
         
         completion = client.chat.completions.create(
-            model="Pro/deepseek-ai/DeepSeek-V3",
+            model=config["api_config"]["openai"]["model"],
             messages=[
                 {"role": "system", "content": "You are a patient receiving psychological counseling."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"},
             temperature=0.7,
-            max_tokens=300
+            max_tokens=300,
+            extra_body=config["api_config"]["openai"].get("extra_body") or None
         )
 
         raw_response = completion.choices[0].message.content
@@ -404,13 +405,14 @@ Directly generate your response in English. Your response should be no more than
 
         try:
             completion = client.chat.completions.create(
-                model="Pro/deepseek-ai/DeepSeek-V3",
+                model=config["api_config"]["openai"]["model"],
                 messages=[
                     {"role": "system", "content": "You are a experienced and empathetic psychological counselor. "},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=150
+                max_tokens=150,
+                extra_body=config["api_config"]["openai"].get("extra_body") or None
             )
             raw_response = completion.choices[0].message.content
             clean_response = raw_response.replace('\\"', '"')

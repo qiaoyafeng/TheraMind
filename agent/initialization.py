@@ -9,7 +9,7 @@ class TherapistInitializer:
         self.config = self._load_config()
 
     def _load_config(self) -> Dict:
-        config_path = Path(__file__).parent / "api_config.json"
+        config_path = Path(__file__).parent.parent / "api_config.json"
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
             

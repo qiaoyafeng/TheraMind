@@ -3,6 +3,10 @@
 💌 TheraMind : A Strategic and Adaptive Agent for Longitudinal Psychological Counseling (WWW 2026)
 </h1>
 
+<p align="center">
+  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
 
 ## 🌸 About
 This repository contains the official evaluation code and data for the paper "**TheraMind : A Strategic and Adaptive Agent for Longitudinal Psychological Counseling**". See more details in our [paper](https://arxiv.org/abs/2510.25758). If you find this project helpful, feel free to ⭐ it!
@@ -21,7 +25,7 @@ The original psychological dataset used in our synthesized datasets are derived 
 **TheraMind** is an agent specialized in **longitudinal psychological counseling** and **adaptive mental health dialogue generation**. Addressing the critical limitations of standard LLMs, it unifies **tactical dialogue management** and **long-term strategic planning** through a novel **dual-loop** architecture.
 
 <p align="center">
-  <img src="https://github.com/Emo-gml/TheraMind/blob/main/figues/pipeline-agent.jpg" alt="Agent Pipline Overview" width="75%">
+  <img src="figues/pipeline-agent.jpg" alt="Agent Pipeline Overview" width="75%">
   <br>
   <em></em>
 </p>
@@ -35,48 +39,109 @@ The original psychological dataset used in our synthesized datasets are derived 
 Our TheraMind achieves better performance across all ten distinct categories of psychological issues in both single-session (left) and multi-
 session (right) contexts.
 <p align="center">
-  <img src="https://github.com/Emo-gml/TheraMind/blob/main/figues/combined_radar_chart.jpg" alt="radar overview" width="60%">
+  <img src="figues/combined_radar_chart.jpg" alt="radar overview" width="60%">
   <br>
   <em></em>
 </p>
 
 ## 🔥 Quick Start
-#### Preparation
-```python
-# Prepare your api configure first
-{"api_config": {
-    "openai": {
-      "base_url": "",
-      "api_key": "",
-      "model": "",
-      "enabled": true}}
-}
 
-# Produce patient medical records
-python case_produce.py
+> **Data files are not shipped with this repository.** The pipeline is driven by JSON files that you download or generate yourself — see [Data preparation](#3-data-preparation) for the exact list and where each file must go.
 
-# Generate session guidance
-python data_produce.py
+### 1. Environment
+
+Requires Python >= 3.10 and [uv](https://docs.astral.sh/uv/):
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # skip if uv is already installed
+uv sync                                           # creates .venv and installs openai / requests
 ```
-#### Automatic Conversation Simulation Between Doctor and Patient
+
+Run every command below **from the repository root** and through `uv run` — the uv-managed interpreter is not your system Python.
+
+### 2. API configuration
+
+```bash
+cp api_config.example.json api_config.json
+```
+
+Then fill in `base_url`, `api_key` and `model`:
+
+| Field | Notes |
+|---|---|
+| `base_url` | OpenAI-compatible endpoint **including `/v1`** (e.g. `http://host:port/vllm/v1`). A missing `/v1` returns `404`. |
+| `api_key` | Raw key only — no `Bearer ` prefix, the SDK adds it. |
+| `model` | Model name exactly as the gateway exposes it. |
+| `extra_body` | Carries `enable_thinking=false`. Required for Qwen3-style gateways that spend every token on reasoning and return an empty `content`; delete the key for models that do not support it. |
+
+### 3. Data preparation
+
+Two files must be downloaded by hand; everything else is generated.
+
+| File | How to obtain | Where to put it |
+|---|---|---|
+| `new_data_translate.json` | HuggingFace [`GMLHUHE/TheraMind_Patient_Guidance`](https://huggingface.co/datasets/GMLHUHE/TheraMind_Patient_Guidance) → download `TheraMind_Patient_Guidance.json` and rename it to `new_data_translate.json` | repository root |
+| `CPsyCounR.json` | HuggingFace [`CAS-SIAT-XinHai/CPsyCounR`](https://huggingface.co/datasets/CAS-SIAT-XinHai/CPsyCounR) (gated, research-use license, application required) | repository root |
+
+Then generate the patient medical records:
+
+```bash
+export PYTHONPATH="$PWD/agent"
+
+uv run python data_process/build_raw_data.py   # CPsyCounR.json          -> raw_data_translate.json
+uv run python data_process/case_produce.py     # raw_data_translate.json -> client_records_translate.json
+cp client_records_translate.json agent/client_records_translate.json
+```
+
+`build_raw_data.py` maps the 3134 Chinese CPsyCounR reports onto the 100 patient ids of the guidance file (10 categories × 10 patients).
+
+Optionally regenerate the session guidance instead of using the released one:
+
+```bash
+uv run python data_process/data_produce.py     # raw_data_translate.json -> new_data_translate.json
+```
+
+> **Working-directory note:** `save_data/`, `eval_data/`, `label_data/` and `new_data_translate.json` are resolved relative to the current working directory, while `client_records_translate.json` is read from `agent/`. Always start from the repository root.
+
+### 4. Simulate a counseling trajectory
+
+```bash
+uv run python agent/main.py
+```
+
+This runs every patient in `client_records_translate.json` for 6 sessions × 8 rounds. For a quick smoke test, edit the bottom of `agent/main.py`:
+
 ```python
-from main import AutoDialogueRunner
+simulator.run(num_sessions=1, max_rounds_per_session=3)
+```
+
+| Output | Content |
+|---|---|
+| `save_data/<patient_id>.json` | patient record, per-session therapy and full dialogue |
+| `eval_data/decision basis_<patient_id>.json` | per-turn memory usage, emotion, strategy and therapy reasoning |
+| `label_data/label_<patient_id>.json` | patient attitude label for every turn |
+
+### 5. Use the agents directly
+
+```python
+from main import AutoDialogueRunner, TherapistAgent, PatientAgent
+
 runner = AutoDialogueRunner()
 runner.run(num_sessions=6, max_rounds_per_session=8)
 
-# or you can directly run
-python agent/main.py
-```
-#### TherapistAgent Create
-```python
-from main import TherapistAgent
 therapist = TherapistAgent()
+patient_agent = PatientAgent(medical_record, patient_id)
 ```
-#### PatientAgent Create
-```python
-from main import PatientAgent
-patient_agent = PatientAgent() 
-```
+
+### 6. Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| `404 Not Found` | `base_url` is missing `/v1` |
+| `401 Unauthorized` | invalid key, or a key that already carries a `Bearer ` prefix |
+| `content` is `None`, or the record comes back as `{}` | reasoning model with thinking enabled — set `extra_body.chat_template_kwargs.enable_thinking=false` |
+| `ModuleNotFoundError: No module named 'memory'` | a `data_process/` script was run without `PYTHONPATH=<repo>/agent` |
+| `FileNotFoundError: new_data_translate.json` | the script was started outside the repository root |
 
 ## 📜 Citation
 ```bibtex

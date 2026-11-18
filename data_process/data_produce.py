@@ -48,7 +48,7 @@ Strictly output a JSON object. Do not provide any explanation.
 
 
         response = self.client.chat.completions.create(
-            model="deepseek-chat",
+            model=config["api_config"]["openai"]["model"],
             messages=[
                 {"role": "system", "content": "You are a psychological counseling case generation system based on the patient's perspective."},
                 {"role": "user", "content": prompt}
@@ -56,7 +56,8 @@ Strictly output a JSON object. Do not provide any explanation.
             timeout=30,  
             temperature=0.7,
             max_tokens=1200,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            extra_body=config["api_config"]["openai"].get("extra_body") or None
         )
             
         if response.choices:

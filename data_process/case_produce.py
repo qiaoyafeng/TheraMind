@@ -15,7 +15,7 @@ class ClientRecordsGenerator:
         self.raw_data_path = "raw_data_translate.json"
         self.output_path = "client_records_translate.json"  
     
-    def load_raw_data(self) -> Dict[str, Dict[str, Any]]:
+    def load_raw_data(self) -> List[Dict[str, Any]]:
         with open(self.raw_data_path, 'r', encoding='utf-8') as f:
             raw_data = json.load(f)
             if not isinstance(raw_data, list):
@@ -46,14 +46,15 @@ Output the JSON object strictly without any explanatory text.
 """
 
         response = client.chat.completions.create(
-            model="deepseek-chat",
+            model=config["api_config"]["openai"]["model"],
             messages=[
                 {"role": "system", "content": "You are a professional medical record generation system."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
             max_tokens=500,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            extra_body=config["api_config"]["openai"].get("extra_body") or None
         )
             
         if response.choices and response.choices[0].message.content:
@@ -69,23 +70,31 @@ Output the JSON object strictly without any explanatory text.
             return {}
         
         records = {}
-        for patient_id, patient_data in raw_cases.items():
-            print(f"Generating the medical record of {patient_id}...")
-            record = self.generate_single_record(patient_id, patient_data)
-            if record:
-                records[patient_id] = {"medical information": record}
-            else:
-                print(f"Warning: the medical record of {patient_id} generation failed, the default information will be used")
-                records[patient_id] = {
-                    **patient_data,
-                    "medical information": {
-                        "patient pseudonym": patient_id,
-                        "patient age": 40 if "elderly" in patient_data.get("case title","") else 30,
-                        "mental health history": "see case content",
-                        "physical health history": "see case content",
-                        "current problems and symptoms": "see case content"
+        for case_dict in raw_cases:
+            if not isinstance(case_dict, dict):
+                continue
+
+            for patient_id, patient_data in case_dict.items():
+                if not isinstance(patient_data, dict):
+                    print(f"Warning: the data format of {patient_id} is incorrect")
+                    continue
+
+                print(f"Generating the medical record of {patient_id}...")
+                record = self.generate_single_record(patient_id, patient_data)
+                if record:
+                    records[patient_id] = {"medical information": record}
+                else:
+                    print(f"Warning: the medical record of {patient_id} generation failed, the default information will be used")
+                    records[patient_id] = {
+                        **patient_data,
+                        "medical information": {
+                            "patient pseudonym": patient_id,
+                            "patient age": 40 if "elderly" in patient_data.get("case title","") else 30,
+                            "mental health history": "see case content",
+                            "physical health history": "see case content",
+                            "current problems and symptoms": "see case content"
+                        }
                     }
-                }
         return records
 
     def save_records(self, records: Dict[str, Dict[str, Any]]):
